@@ -4,11 +4,16 @@ from datetime import datetime
 from pathlib import Path
 
 EVE_FILE = "/var/log/suricata/eve.json"
-CUSTOM_SIDS = {1000001, 1000002}
-CORRELATION_WINDOW_SECONDS = 300
 pending_triggers = {}
 BASE_DIR = Path(__file__).resolve().parent
+CONFIG_FILE = BASE_DIR / "config.json"
 INCIDENT_FILE = BASE_DIR / "incidents.json"
+with open(CONFIG_FILE, "r") as f:
+    config = json.load(f)
+TRIGGER_SID = config["trigger_sid"]
+BACKDOOR_SID = config["backdoor_sid"]
+CORRELATION_WINDOW_SECONDS = config["correlation_window_seconds"]
+CUSTOM_SIDS = {TRIGGER_SID, BACKDOOR_SID}
 try:
     with open(INCIDENT_FILE, "r") as f:
         incidents = json.load(f)
@@ -40,11 +45,10 @@ with open(EVE_FILE, "r") as f:
             continue
 
         key = (event.get("src_ip"), event.get("dest_ip"))
-
-        if sid == 1000001:
+        if sid == TRIGGER_SID:
             pending_triggers[key] = timestamp
-
-        elif sid == 1000002:
+        
+        elif sid == BACKDOOR_SID:
             if key in pending_triggers:
                delta = timestamp - pending_triggers[key]
 
@@ -57,8 +61,8 @@ with open(EVE_FILE, "r") as f:
                        "title": "Possible Successful vsftpd Backdoor Exploitation",
                        "source_ip": source_ip,
                        "target_ip": dest_ip,
-                       "trigger_sid": 1000001,
-                       "backdoor_sid": 1000002,
+                       "trigger_sid": TRIGGER_SID,
+                       "backdoor_sid": BACKDOOR_SID,
                        "elapsed_seconds": round(elapsed_seconds, 1),
                        "trigger_time": pending_triggers[key].isoformat(),
                        "backdoor_time": timestamp.isoformat()
@@ -73,8 +77,8 @@ with open(EVE_FILE, "r") as f:
                    print()
                    print(f"Source:       {source_ip}")
                    print(f"Target:       {dest_ip}")
-                   print("Trigger SID:  1000001")
-                   print("Backdoor SID: 1000002")
+                   print(f"Trigger SID:  {TRIGGER_SID}")
+                   print(f"Backdoor SID: {BACKDOOR_SID}")
                    print(f"Elapsed:      {elapsed_seconds:.1f} seconds")
                    print("Confidence:   HIGH")
                    print("=" * 50)

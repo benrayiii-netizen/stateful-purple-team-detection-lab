@@ -1,0 +1,5 @@
+{
+    "trigger_sid": 1000001,
+    "backdoor_sid": 1000002,
+    "correlation_window_seconds": 300
+}
