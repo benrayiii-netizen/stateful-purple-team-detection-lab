@@ -1,0 +1,2 @@
+{"timestamp":"2026-08-21T12:00:00-04:00","event_type":"alert","src_ip":"192.168.139.128","dest_ip":"192.168.139.129","alert":{"signature_id":1000001,"signature":"LAB Possible vsftpd backdoor trigger"}}
+{"timestamp":"2026-08-21T12:06:00-04:00","event_type":"alert","src_ip":"192.168.139.128","dest_ip":"192.168.139.129","alert":{"signature_id":1000002,"signature":"LAB Connection to vsftpd backdoor shell"}}

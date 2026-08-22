@@ -1,0 +1,14 @@
+__pycache__/
+*.pyc
+
+# Local/generated incident data
+incidents.json
+
+# Raw security telemetry
+eve.json
+fast.log
+
+# Development/backup files
+correlate_v1_backup.py
+correlate_test.py
+/test_outside_window.json

@@ -1,0 +1,11 @@
+{
+    "severity": "HIGH",
+    "title": "Possible Successful vsftpd Backdoor Exploitation",
+    "source_ip": "192.168.139.128",
+    "target_ip": "192.168.139.129",
+    "trigger_sid": 1000001,
+    "backdoor_sid": 1000002,
+    "elapsed_seconds": 86.7,
+    "trigger_time": "2026-08-21T20:05:15-04:00",
+    "backdoor_time": "2026-08-21T20:06:42-04:00"
+}
