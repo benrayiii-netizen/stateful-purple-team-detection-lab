@@ -10,6 +10,30 @@ CONFIG_FILE = BASE_DIR / "config.json"
 INCIDENT_FILE = BASE_DIR / "incidents.json"
 with open(CONFIG_FILE, "r") as f:
     config = json.load(f)
+required_keys = {
+    "trigger_sid",
+    "backdoor_sid",
+    "correlation_window_seconds"
+}
+
+missing_keys = required_keys - config.keys()
+
+if missing_keys:
+    raise ValueError(
+        f"Missing required configuration keys: {sorted(missing_keys)}"
+    )
+
+if not isinstance(config["trigger_sid"], int):
+    raise ValueError("trigger_sid must be an integer")
+
+if not isinstance(config["backdoor_sid"], int):
+    raise ValueError("backdoor_sid must be an integer")
+
+if not isinstance(config["correlation_window_seconds"], int):
+    raise ValueError("correlation_window_seconds must be an integer")
+
+if config["correlation_window_seconds"] <= 0:
+    raise ValueError("correlation_window_seconds must be greater than 0")
 TRIGGER_SID = config["trigger_sid"]
 BACKDOOR_SID = config["backdoor_sid"]
 CORRELATION_WINDOW_SECONDS = config["correlation_window_seconds"]
