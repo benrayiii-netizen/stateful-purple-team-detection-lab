@@ -34,8 +34,15 @@ pending_triggers = {}
 BASE_DIR = Path(__file__).resolve().parent
 CONFIG_FILE = BASE_DIR / "config.json"
 INCIDENT_FILE = BASE_DIR / "incidents.json"
-with open(CONFIG_FILE, "r") as f:
-    config = json.load(f)
+try:
+    with open(CONFIG_FILE, "r") as f:
+        config = json.load(f)
+except FileNotFoundError:
+    print(f"CONFIGURATION ERROR: {CONFIG_FILE} was not found")
+    raise SystemExit(1)
+except json.JSONDecodeError:
+    print(f"CONFIGURATION ERROR: {CONFIG_FILE} contains invalid JSON")
+    raise SystemExit(1)
 
 try:
     validate_config(config)
