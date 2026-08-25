@@ -82,7 +82,16 @@ with eve_stream as f:
 
         alert = event.get("alert", {})
         sid = alert.get("signature_id")
-        timestamp = datetime.fromisoformat(event["timestamp"])
+        timestamp_value = event.get("timestamp")
+
+        if sid is None or timestamp_value is None:
+            continue
+
+        try:
+            timestamp = datetime.fromisoformat(timestamp_value)
+        except (TypeError, ValueError):
+            continue
+
         stale_keys = []
 
         for stored_key, stored_time in pending_triggers.items():
@@ -90,7 +99,6 @@ with eve_stream as f:
 
             if age.total_seconds() > CORRELATION_WINDOW_SECONDS:
                 stale_keys.append(stored_key)
-
         for stale_key in stale_keys:
             del pending_triggers[stale_key]
 
