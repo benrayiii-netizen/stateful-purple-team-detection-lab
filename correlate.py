@@ -61,7 +61,16 @@ try:
 except (FileNotFoundError, json.JSONDecodeError):
     incidents = []
 
-with open(EVE_FILE, "r") as f:
+try:
+    eve_stream = open(EVE_FILE, "r")
+except FileNotFoundError:
+    print(f"TELEMETRY ERROR: {EVE_FILE} was not found")
+    raise SystemExit(1)
+except PermissionError:
+    print(f"TELEMETRY ERROR: permission denied reading {EVE_FILE}")
+    raise SystemExit(1)
+
+with eve_stream as f:
     for line in f:
         try:
             event = json.loads(line)
