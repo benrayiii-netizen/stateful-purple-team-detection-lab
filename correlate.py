@@ -63,7 +63,10 @@ except (FileNotFoundError, json.JSONDecodeError):
 
 with open(EVE_FILE, "r") as f:
     for line in f:
-        event = json.loads(line)
+        try:
+            event = json.loads(line)
+        except json.JSONDecodeError:
+            continue
 
         if event.get("event_type") != "alert":
             continue
