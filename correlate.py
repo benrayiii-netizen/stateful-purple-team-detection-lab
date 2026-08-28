@@ -29,6 +29,78 @@ def validate_config(config):
     if config["correlation_window_seconds"] <= 0:
         raise ValueError("correlation_window_seconds must be greater than 0")
 
+def process_event(
+    event,
+    pending_triggers,
+    incidents,
+    trigger_sid,
+    backdoor_sid,
+    correlation_window_seconds,
+):
+
+    alert = event.get("alert", {})
+    sid = alert.get("signature_id")
+    timestamp_value = event.get("timestamp")
+
+    if sid is None or timestamp_value is None:
+        return
+
+    try:
+        timestamp = datetime.fromisoformat(timestamp_value)
+    except (TypeError, ValueError):
+        return
+
+    stale_keys = []
+
+    for stored_key, stored_time in pending_triggers.items():
+        age = timestamp - stored_time
+
+        if age.total_seconds() > correlation_window_seconds:
+            stale_keys.append(stored_key)
+
+    for stale_key in stale_keys:
+        del pending_triggers[stale_key]
+
+    src_ip = event.get("src_ip")
+    dest_ip = event.get("dest_ip")
+
+    if src_ip is None or dest_ip is None:
+        return
+
+    key = (src_ip, dest_ip)
+
+    if sid == trigger_sid:
+        pending_triggers[key] = timestamp
+
+    elif sid == backdoor_sid:
+        if key not in pending_triggers:
+            return
+
+        delta = timestamp - pending_triggers[key]
+
+        if 0 <= delta.total_seconds() <= correlation_window_seconds:
+            incident = {
+                "severity": "HIGH",
+                "title": "Possible Successful vsftpd Backdoor Exploitation",
+                "source_ip": src_ip,
+                "target_ip": dest_ip,
+                "trigger_sid": trigger_sid,
+                "backdoor_sid": backdoor_sid,
+                "elapsed_seconds": round(delta.total_seconds(), 1),
+                "trigger_time": pending_triggers[key].isoformat(),
+                "backdoor_time": timestamp.isoformat(),
+            }
+
+            new_incident = None
+
+            if incident not in incidents:
+                incidents.append(incident)
+                new_incident = incident
+
+            del pending_triggers[key]
+
+            return new_incident
+
 def main():
     EVE_FILE = "/var/log/suricata/eve.json"
     pending_triggers = {}
@@ -71,6 +143,7 @@ def main():
         print(f"TELEMETRY ERROR: permission denied reading {EVE_FILE}")
         raise SystemExit(1)
 
+
     with eve_stream as f:
         for line in f:
             try:
@@ -81,71 +154,23 @@ def main():
             if event.get("event_type") != "alert":
                 continue
 
-            alert = event.get("alert", {})
-            sid = alert.get("signature_id")
-            timestamp_value = event.get("timestamp")
+            new_incident = process_event(
+                event,
+                pending_triggers,
+                incidents,
+                TRIGGER_SID,
+                BACKDOOR_SID,
+                CORRELATION_WINDOW_SECONDS,
+            )
 
-            if sid is None or timestamp_value is None:
-                continue
-
-            try:
-                timestamp = datetime.fromisoformat(timestamp_value)
-            except (TypeError, ValueError):
-                continue
-
-            stale_keys = []
-
-            for stored_key, stored_time in pending_triggers.items():
-                age = timestamp - stored_time
-
-                if age.total_seconds() > CORRELATION_WINDOW_SECONDS:
-                    stale_keys.append(stored_key)
-            for stale_key in stale_keys:
-                del pending_triggers[stale_key]
-
-            if sid not in CUSTOM_SIDS:
-                continue
-
-            key = (event.get("src_ip"), event.get("dest_ip"))
-            if sid == TRIGGER_SID:
-                pending_triggers[key] = timestamp
-        
-            elif sid == BACKDOOR_SID:
-                if key in pending_triggers:
-                   delta = timestamp - pending_triggers[key]
-
-                   if 0 <= delta.total_seconds() <= CORRELATION_WINDOW_SECONDS:
-                       source_ip, dest_ip = key
-                       elapsed_seconds = delta.total_seconds()
-
-                       incident = {
-                           "severity": "HIGH",
-                           "title": "Possible Successful vsftpd Backdoor Exploitation",
-                           "source_ip": source_ip,
-                           "target_ip": dest_ip,
-                           "trigger_sid": TRIGGER_SID,
-                           "backdoor_sid": BACKDOOR_SID,
-                           "elapsed_seconds": round(elapsed_seconds, 1),
-                           "trigger_time": pending_triggers[key].isoformat(),
-                           "backdoor_time": timestamp.isoformat()
-                       }
-
-                       if incident not in incidents:
-                           incidents.append(incident)
-
-                       print("=" * 50)
-                       print("HIGH SECURITY INCIDENT")
-                       print("Possible Successful vsftpd Backdoor Exploitation")
-                       print()
-                       print(f"Source:       {source_ip}")
-                       print(f"Target:       {dest_ip}")
-                       print(f"Trigger SID:  {TRIGGER_SID}")
-                       print(f"Backdoor SID: {BACKDOOR_SID}")
-                       print(f"Elapsed:      {elapsed_seconds:.1f} seconds")
-                       print("Confidence:   HIGH")
-                       print("=" * 50)
-
-                       del pending_triggers[key]
+            if new_incident is not None:
+                print("=" * 50)
+                print("HIGH SECURITY INCIDENT")
+                print(f"Source: {new_incident['source_ip']}")
+                print(f"Target: {new_incident['target_ip']}")
+                print(f"Elapsed: {new_incident['elapsed_seconds']} seconds")
+                print("Confidence: HIGH")
+                print("=" * 50)
 
     with open(INCIDENT_FILE, "w") as f:
         json.dump(incidents, f, indent=4)
