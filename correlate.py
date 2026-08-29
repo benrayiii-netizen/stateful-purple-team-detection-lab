@@ -1,4 +1,5 @@
 import json
+import time
 
 from datetime import datetime
 from pathlib import Path
@@ -143,9 +144,15 @@ def main():
         print(f"TELEMETRY ERROR: permission denied reading {EVE_FILE}")
         raise SystemExit(1)
 
-
     with eve_stream as f:
-        for line in f:
+        f.seek(0, 2)
+        while True:
+            line = f.readline()
+
+            if not line:
+                time.sleep(0.5)
+                continue
+
             try:
                 event = json.loads(line)
             except json.JSONDecodeError:
@@ -172,8 +179,8 @@ def main():
                 print("Confidence: HIGH")
                 print("=" * 50)
 
-    with open(INCIDENT_FILE, "w") as f:
-        json.dump(incidents, f, indent=4)
+                with open(INCIDENT_FILE, "w") as incident_file:
+                    json.dump(incidents, incident_file, indent=4)
 
 if __name__ == "__main__":
     main()
