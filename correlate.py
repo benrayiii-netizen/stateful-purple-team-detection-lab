@@ -1,4 +1,5 @@
 import json
+import os
 import time
 
 from datetime import datetime
@@ -146,7 +147,20 @@ def main():
 
     with eve_stream as f:
         f.seek(0, 2)
+
         while True:
+            try:
+                current_inode = os.stat(EVE_FILE).st_ino
+                open_inode = os.fstat(f.fileno()).st_ino
+            except FileNotFoundError:
+                time.sleep(0.5)
+                continue
+
+            if current_inode != open_inode:
+                f.close()
+                f = open(EVE_FILE, "r")
+                f.seek(0, 2)
+
             line = f.readline()
 
             if not line:
