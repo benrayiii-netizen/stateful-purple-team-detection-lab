@@ -91,3 +91,14 @@ purple_team/
 ## Project Status
 
 V1 detection and correlation logic validated in a controlled lab environment.
+
+## V2 Engineering Improvements
+The V2 refactor separates security decision logic from file I/O and operator-facing output.
+Correlation behavior is isolated in process_event(), while main() handles telemetry input, incident persistence, and operator-facing output.
+Pending triggers are tracked by source/destination host pair and automatically removed when they become stale.
+A successful correlation consumes the matching pending trigger so the same trigger cannot be reused for another incident.
+Correlation requires the backdoor event to occur at or after the trigger and within the configured correlation window, including the exact boundary.
+V2 includes automated pytest coverage for configuration validation and core correlation behavior.
+The automated test suite contains eight behavioral tests covering positive and negative correlation paths.
+Tests verify trigger storage, unmatched backdoor handling, successful correlation, host-pair matching, stale-trigger cleanup, and exact-window-boundary behavior.
+V2 Status: Refactored correlation engine validated with 8 passing automated tests.
