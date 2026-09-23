@@ -1,6 +1,6 @@
 import pytest
-
-from correlate import validate_config, process_event
+from correlate import process_event, validate_config, telemetry_is_fresh
+from datetime import datetime
 
 def test_trigger_sid_must_be_integer():
     config = {
@@ -17,6 +17,7 @@ def test_valid_config_is_accepted():
         "trigger_sid": 1000001,
         "backdoor_sid": 1000002,
         "correlation_window_seconds": 300,
+        "telemetry_freshness_seconds": 60,
     }
 
     validate_config(config)
@@ -277,3 +278,39 @@ def test_backdoor_at_exact_window_boundary_creates_incident():
     assert result["elapsed_seconds"] == 300.0
     assert len(incidents) == 1
     assert key not in pending_triggers
+def test_recent_telemetry_is_fresh():
+    last_event_time = datetime.fromisoformat("2026-09-22T10:00:00")
+    current_time = datetime.fromisoformat("2026-09-22T10:00:30")
+
+    result = telemetry_is_fresh(
+        last_event_time,
+        current_time,
+        60,
+    )
+
+    assert result is True
+
+def test_stale_telemetry_is_not_fresh():
+    last_event_time = datetime.fromisoformat("2026-09-22T10:00:00")
+    current_time = datetime.fromisoformat("2026-09-22T10:01:01")
+
+    result = telemetry_is_fresh(
+        last_event_time,
+        current_time,
+        60,
+    )
+
+    assert result is False
+
+
+def test_telemetry_at_exact_freshness_boundary_is_fresh():
+    last_event_time = datetime.fromisoformat("2026-09-22T10:00:00")
+    current_time = datetime.fromisoformat("2026-09-22T10:01:00")
+
+    result = telemetry_is_fresh(
+        last_event_time,
+        current_time,
+        60,
+    )
+
+    assert result is True

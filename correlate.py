@@ -2,14 +2,15 @@ import json
 import os
 import time
 
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 def validate_config(config):
     required_keys = {
         "trigger_sid",
         "backdoor_sid",
-        "correlation_window_seconds"
+        "correlation_window_seconds",
+        "telemetry_freshness_seconds",
     }
 
     missing_keys = required_keys - config.keys()
@@ -28,8 +29,23 @@ def validate_config(config):
     if not isinstance(config["correlation_window_seconds"], int):
         raise ValueError("correlation_window_seconds must be an integer")
 
+    if not isinstance(config["telemetry_freshness_seconds"], int):
+        raise ValueError("telemetry_freshness_seconds must be an integer")
+
     if config["correlation_window_seconds"] <= 0:
         raise ValueError("correlation_window_seconds must be greater than 0")
+
+    if config["telemetry_freshness_seconds"] <= 0:
+        raise ValueError("telemetry_freshness_seconds must be greater than 0")
+
+def telemetry_is_fresh(
+    last_event_time,
+    current_time,
+    freshness_limit_seconds,
+):
+    age = current_time - last_event_time
+
+    return 0 <= age.total_seconds() <= freshness_limit_seconds
 
 def process_event(
     event,
@@ -104,6 +120,7 @@ def process_event(
             return new_incident
 
 def main():
+    last_telemetry_time = None
     EVE_FILE = "/var/log/suricata/eve.json"
     pending_triggers = {}
     BASE_DIR = Path(__file__).resolve().parent
@@ -128,6 +145,7 @@ def main():
     TRIGGER_SID = config["trigger_sid"]
     BACKDOOR_SID = config["backdoor_sid"]
     CORRELATION_WINDOW_SECONDS = config["correlation_window_seconds"]
+    TELEMETRY_FRESHNESS_SECONDS = config["telemetry_freshness_seconds"]
     CUSTOM_SIDS = {TRIGGER_SID, BACKDOOR_SID}
 
     try:
@@ -164,6 +182,15 @@ def main():
             line = f.readline()
 
             if not line:
+                if last_telemetry_time is not None:
+                    current_time = datetime.now(timezone.utc)
+
+                    if not telemetry_is_fresh(
+                        last_telemetry_time,
+                        current_time,
+                        TELEMETRY_FRESHNESS_SECONDS,
+                    ):
+                        print("PIPELINE HEALTH WARNING: EVE telemetry is stale")
                 time.sleep(0.5)
                 continue
 
@@ -172,6 +199,7 @@ def main():
             except json.JSONDecodeError:
                 continue
 
+            last_telemetry_time = datetime.now(timezone.utc)
             if event.get("event_type") != "alert":
                 continue
 
