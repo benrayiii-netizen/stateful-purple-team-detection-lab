@@ -47,6 +47,12 @@ def telemetry_is_fresh(
 
     return 0 <= age.total_seconds() <= freshness_limit_seconds
 
+def should_report_telemetry_warning(
+    telemetry_fresh,
+    stale_already_reported,
+):
+    return not telemetry_fresh and not stale_already_reported
+
 def process_event(
     event,
     pending_triggers,
@@ -121,6 +127,7 @@ def process_event(
 
 def main():
     last_telemetry_time = None
+    telemetry_stale_reported = False
     EVE_FILE = "/var/log/suricata/eve.json"
     pending_triggers = {}
     BASE_DIR = Path(__file__).resolve().parent
@@ -182,7 +189,7 @@ def main():
             line = f.readline()
 
             if not line:
-                if last_telemetry_time is not None:
+                if last_telemetry_time is not None and not telemetry_stale_reported:
                     current_time = datetime.now(timezone.utc)
 
                     if not telemetry_is_fresh(
@@ -191,6 +198,7 @@ def main():
                         TELEMETRY_FRESHNESS_SECONDS,
                     ):
                         print("PIPELINE HEALTH WARNING: EVE telemetry is stale")
+                        telemetry_stale_reported = True
                 time.sleep(0.5)
                 continue
 
@@ -200,6 +208,7 @@ def main():
                 continue
 
             last_telemetry_time = datetime.now(timezone.utc)
+            telemetry_stale_reported = False
             if event.get("event_type") != "alert":
                 continue
 

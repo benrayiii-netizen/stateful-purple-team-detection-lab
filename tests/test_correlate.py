@@ -1,5 +1,5 @@
 import pytest
-from correlate import process_event, validate_config, telemetry_is_fresh
+from correlate import process_event, validate_config, telemetry_is_fresh, should_report_telemetry_warning
 from datetime import datetime
 
 def test_trigger_sid_must_be_integer():
@@ -314,3 +314,11 @@ def test_telemetry_at_exact_freshness_boundary_is_fresh():
     )
 
     assert result is True
+
+def test_stale_telemetry_should_report_warning():
+    should_warn = should_report_telemetry_warning(
+        telemetry_fresh=False,
+        stale_already_reported=False,
+    )
+
+    assert should_warn is True
