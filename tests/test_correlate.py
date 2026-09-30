@@ -322,3 +322,19 @@ def test_stale_telemetry_should_report_warning():
     )
 
     assert should_warn is True
+
+def test_stale_telemetry_already_reported_should_not_warn():
+    should_warn = should_report_telemetry_warning(
+        telemetry_fresh=False,
+        stale_already_reported=True,
+    )
+
+    assert should_warn is False
+
+def test_fresh_telemetry_should_not_warn():
+    should_warn = should_report_telemetry_warning(
+        telemetry_fresh=True,
+        stale_already_reported=False,
+    )
+
+    assert should_warn is False

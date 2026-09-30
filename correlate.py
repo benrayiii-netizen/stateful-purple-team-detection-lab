@@ -189,18 +189,27 @@ def main():
             line = f.readline()
 
             if not line:
-                if last_telemetry_time is not None and not telemetry_stale_reported:
+                if last_telemetry_time is not None:
                     current_time = datetime.now(timezone.utc)
 
-                    if not telemetry_is_fresh(
+                    telemetry_fresh = telemetry_is_fresh(
                         last_telemetry_time,
                         current_time,
                         TELEMETRY_FRESHNESS_SECONDS,
+                    )
+
+                    if should_report_telemetry_warning(
+                        telemetry_fresh,
+                        telemetry_stale_reported,
                     ):
                         print("PIPELINE HEALTH WARNING: EVE telemetry is stale")
                         telemetry_stale_reported = True
-                time.sleep(0.5)
-                continue
+
+            time.sleep(0.5)
+            continue
+
+            time.sleep(0.5)
+            continue
 
             try:
                 event = json.loads(line)
