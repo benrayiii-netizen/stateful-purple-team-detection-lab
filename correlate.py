@@ -47,6 +47,20 @@ def telemetry_is_fresh(
 
     return 0 <= age.total_seconds() <= freshness_limit_seconds
 
+def startup_telemetry_is_fresh(
+    monitor_start_time,
+    last_telemetry_time,
+    current_time,
+    freshness_limit_seconds,
+):
+    if last_telemetry_time is None:
+        age = current_time - monitor_start_time
+        return 0 <= age.total_seconds() <= freshness_limit_seconds
+    return telemetry_is_fresh(
+        last_telemetry_time,
+        current_time,
+    )
+
 def should_report_telemetry_warning(
     telemetry_fresh,
     stale_already_reported,
@@ -172,6 +186,7 @@ def main():
 
     with eve_stream as f:
         f.seek(0, 2)
+        monitor_start_time = datetime.now(timezone.utc)
 
         while True:
             try:
@@ -189,27 +204,25 @@ def main():
             line = f.readline()
 
             if not line:
-                if last_telemetry_time is not None:
-                    current_time = datetime.now(timezone.utc)
+                current_time = datetime.now(timezone.utc)
 
-                    telemetry_fresh = telemetry_is_fresh(
+                telemetry_fresh = startup_telemetry_is_fresh(
+                        monitor_start_time,
                         last_telemetry_time,
                         current_time,
                         TELEMETRY_FRESHNESS_SECONDS,
                     )
 
-                    if should_report_telemetry_warning(
+                if should_report_telemetry_warning(
                         telemetry_fresh,
                         telemetry_stale_reported,
                     ):
-                        print("PIPELINE HEALTH WARNING: EVE telemetry is stale")
-                        telemetry_stale_reported = True
+                    print("PIPELINE HEALTH WARNING: EVE telemetry is stale")
+                    telemetry_stale_reported = True
 
             time.sleep(0.5)
             continue
 
-            time.sleep(0.5)
-            continue
 
             try:
                 event = json.loads(line)

@@ -1,5 +1,5 @@
 import pytest
-from correlate import process_event, validate_config, telemetry_is_fresh, should_report_telemetry_warning
+from correlate import process_event, validate_config, telemetry_is_fresh, startup_telemetry_is_fresh, should_report_telemetry_warning
 from datetime import datetime
 
 def test_trigger_sid_must_be_integer():
@@ -338,3 +338,29 @@ def test_fresh_telemetry_should_not_warn():
     )
 
     assert should_warn is False
+
+def test_no_telemetry_after_startup_is_not_fresh():
+    monitor_start_time = datetime.fromisoformat("2026-09-22T10:00:00")
+    current_time = datetime.fromisoformat("2026-09-22T10:01:01")
+    last_telemetry_time = None
+    telemetry_fresh = startup_telemetry_is_fresh(
+        monitor_start_time,
+        last_telemetry_time,
+        current_time,
+        60,
+    )
+
+    assert telemetry_fresh is False
+
+
+def test_no_telemetry_during_startup_grace_period_is_fresh():
+    monitor_start_time = datetime.fromisoformat("2026-09-22T10:00:00")
+    current_time = datetime.fromisoformat("2026-09-22T10:00:30")
+    last_telemetry_time = None
+    telemetry_fresh = startup_telemetry_is_fresh(
+        monitor_start_time,
+        last_telemetry_time,
+        current_time,
+        60,
+    )
+    assert telemetry_fresh is True
