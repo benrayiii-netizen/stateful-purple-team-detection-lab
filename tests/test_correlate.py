@@ -364,3 +364,17 @@ def test_no_telemetry_during_startup_grace_period_is_fresh():
         60,
     )
     assert telemetry_fresh is True
+
+def test_received_telemetry_uses_last_event_time_for_freshness():
+    monitor_start_time = datetime.fromisoformat("2026-09-22T10:00:00")
+    last_telemetry_time = datetime.fromisoformat("2026-09-22T10:01:00")
+    current_time = datetime.fromisoformat("2026-09-22T10:01:30")
+
+    telemetry_fresh = startup_telemetry_is_fresh(
+        monitor_start_time,
+        last_telemetry_time,
+        current_time,
+        60,
+    )
+
+    assert telemetry_fresh is True

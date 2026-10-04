@@ -59,6 +59,7 @@ def startup_telemetry_is_fresh(
     return telemetry_is_fresh(
         last_telemetry_time,
         current_time,
+        freshness_limit_seconds,
     )
 
 def should_report_telemetry_warning(
@@ -220,8 +221,8 @@ def main():
                     print("PIPELINE HEALTH WARNING: EVE telemetry is stale")
                     telemetry_stale_reported = True
 
-            time.sleep(0.5)
-            continue
+                time.sleep(0.5)
+                continue
 
 
             try:
@@ -231,6 +232,7 @@ def main():
 
             last_telemetry_time = datetime.now(timezone.utc)
             telemetry_stale_reported = False
+
             if event.get("event_type") != "alert":
                 continue
 
