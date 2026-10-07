@@ -102,3 +102,23 @@ V2 includes automated pytest coverage for configuration validation and core corr
 The automated test suite contains eight behavioral tests covering positive and negative correlation paths.
 Tests verify trigger storage, unmatched backdoor handling, successful correlation, host-pair matching, stale-trigger cleanup, and exact-window-boundary behavior.
 V2 Status: Refactored correlation engine validated with 8 passing automated tests.
+
+## V2 Telemetry Health Monitoring
+
+The correlator now monitors the health of the Suricata EVE telemetry pipeline in addition to performing security event correlation.
+
+Valid EVE events update the last known telemetry time, including non-alert events such as Suricata statistics. If no valid telemetry is received within the configured freshness window, the correlator reports a pipeline health warning.
+
+The health logic includes:
+- A startup grace period before missing telemetry is considered stale.
+- A configurable telemetry freshness window.
+- A single warning when telemetry becomes stale.
+- Warning suppression while the stale condition continues.
+- Automatic recovery when valid telemetry resumes.
+- Warning re-arming so a later telemetry outage can generate a new warning.
+
+Live integration testing validated the complete health cycle:
+
+Healthy telemetry -> stale telemetry -> warning -> warning suppression -> telemetry recovery -> warning re-armed -> second outage -> new warning.
+
+The automated pytest suite contains 17 passing tests covering correlation behavior, configuration validation, and telemetry health logic.
