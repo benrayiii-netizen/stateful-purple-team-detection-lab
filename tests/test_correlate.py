@@ -76,7 +76,42 @@ def test_backdoor_without_trigger_creates_no_incident():
     assert result is None
     assert incidents == []
     assert pending_triggers == {}
+def test_backdoor_before_trigger_creates_no_incident():
+    pending_triggers = {}
+    incidents = []
 
+    backdoor = {
+        "event_type": "alert",
+        "timestamp": "2026-08-27T10:00:00",
+        "src_ip": "192.168.139.128",
+        "dest_ip": "192.168.139.129",
+        "alert": {"signature_id": 1000002},
+    }
+
+    trigger = {
+        "event_type": "alert",
+        "timestamp": "2026-08-27T10:00:02",
+        "src_ip": "192.168.139.128",
+        "dest_ip": "192.168.139.129",
+        "alert": {"signature_id": 1000001},
+    }
+
+    for event in (backdoor, trigger):
+        result = process_event(
+            event,
+            pending_triggers,
+            incidents,
+            1000001,
+            1000002,
+            300,
+        )
+        assert result is None
+
+    assert incidents == []
+    assert len(pending_triggers) == 1
+    assert pending_triggers[
+        ("192.168.139.128", "192.168.139.129")
+    ].isoformat() == "2026-08-27T10:00:02"
 def test_matching_trigger_and_backdoor_creates_incident():
     pending_triggers = {}
     incidents = []
