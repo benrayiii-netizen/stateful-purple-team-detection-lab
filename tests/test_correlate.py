@@ -1,5 +1,6 @@
 import pytest
 from correlate import process_event, validate_config, telemetry_is_fresh, startup_telemetry_is_fresh, should_report_telemetry_warning
+from correlate import monotonic_telemetry_is_fresh
 from datetime import datetime
 
 def test_trigger_sid_must_be_integer():
@@ -413,3 +414,19 @@ def test_received_telemetry_uses_last_event_time_for_freshness():
     )
 
     assert telemetry_fresh is True
+
+
+def test_monotonic_telemetry_freshness():
+    # Startup grace period
+    assert monotonic_telemetry_is_fresh(100.0, None, 130.0, 60)
+    assert not monotonic_telemetry_is_fresh(100.0, None, 161.0, 60)
+
+    # Fresh telemetry and the 60-second boundary
+    assert monotonic_telemetry_is_fresh(100.0, 150.0, 180.0, 60)
+    assert monotonic_telemetry_is_fresh(100.0, 150.0, 210.0, 60)
+
+    # Stale telemetry
+    assert not monotonic_telemetry_is_fresh(100.0, 150.0, 211.0, 60)
+
+    # Invalid negative elapsed time
+    assert not monotonic_telemetry_is_fresh(100.0, 150.0, 149.0, 60)

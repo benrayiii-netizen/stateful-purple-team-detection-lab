@@ -37,6 +37,19 @@ def validate_config(config):
 
     if config["telemetry_freshness_seconds"] <= 0:
         raise ValueError("telemetry_freshness_seconds must be greater than 0")
+def monotonic_telemetry_is_fresh(
+    monitor_start,
+    last_telemetry,
+    current_time,
+    freshness_limit_seconds,
+):
+    last_activity = (
+        last_telemetry
+        if last_telemetry is not None
+        else monitor_start
+    )
+    age = current_time - last_activity
+    return 0 <= age <= freshness_limit_seconds
 
 def telemetry_is_fresh(
     last_event_time,
@@ -188,6 +201,8 @@ def main():
     with eve_stream as f:
         f.seek(0, 2)
         monitor_start_time = datetime.now(timezone.utc)
+        monitor_start_monotonic = time.monotonic()
+        last_telemetry_monotonic = None
 
         while True:
             try:
@@ -207,12 +222,12 @@ def main():
             if not line:
                 current_time = datetime.now(timezone.utc)
 
-                telemetry_fresh = startup_telemetry_is_fresh(
-                        monitor_start_time,
-                        last_telemetry_time,
-                        current_time,
-                        TELEMETRY_FRESHNESS_SECONDS,
-                    )
+                telemetry_fresh = monotonic_telemetry_is_fresh(
+                    monitor_start_monotonic,
+                    last_telemetry_monotonic,
+                    time.monotonic(),
+                    TELEMETRY_FRESHNESS_SECONDS,
+                )
 
                 if should_report_telemetry_warning(
                         telemetry_fresh,
@@ -231,6 +246,7 @@ def main():
                 continue
 
             last_telemetry_time = datetime.now(timezone.utc)
+            last_telemetry_monotonic = time.monotonic()
             telemetry_stale_reported = False
 
             if event.get("event_type") != "alert":
