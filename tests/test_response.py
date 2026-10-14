@@ -339,3 +339,169 @@ def test_duplicate_existing_history_is_not_overwritten(tmp_path):
         save_response_record(path, second)
 
     assert path.read_bytes() == original_bytes
+
+
+
+def test_concurrent_writers_preserve_both_records(tmp_path):
+    """Two processes must not lose updates to shared response history."""
+    import multiprocessing
+    import queue
+
+    path = tmp_path / "response_records.json"
+
+    first_incident = sample_incident()
+    second_incident = sample_incident()
+    second_incident["backdoor_time"] = "2026-10-13T12:00:00"
+
+    first = create_triage_record(
+        first_incident, "Blue Team Analyst",
+        "Review", "First concurrent incident"
+    )
+    second = create_triage_record(
+        second_incident, "Blue Team Analyst",
+        "Review", "Second concurrent incident"
+    )
+
+    # Linux fork context: separate processes share the start signal.
+    ctx = multiprocessing.get_context("fork")
+    start = ctx.Event()
+    results = ctx.Queue()
+
+    def worker(record):
+        try:
+            if not start.wait(timeout=10):
+                raise TimeoutError("Start signal timed out")
+            save_response_record(path, record)
+            results.put(("PASS", record["incident_id"]))
+        except Exception as exc:
+            results.put(("FAIL", repr(exc)))
+
+    processes = [
+        ctx.Process(target=worker, args=(first,)),
+        ctx.Process(target=worker, args=(second,)),
+    ]
+
+    for process in processes:
+        process.start()
+
+    try:
+        start.set()
+
+        for process in processes:
+            process.join(timeout=15)
+
+        assert all(
+            not process.is_alive() for process in processes
+        ), "Concurrent writer did not finish"
+
+        assert all(
+            process.exitcode == 0 for process in processes
+        ), "Concurrent writer exited abnormally"
+
+        outcomes = [results.get(timeout=5) for _ in processes]
+
+        assert all(
+            outcome[0] == "PASS" for outcome in outcomes
+        ), outcomes
+
+        saved = load_response_records(path)
+        saved_ids = [record["incident_id"] for record in saved]
+
+        assert len(saved) == 2
+        assert len(set(saved_ids)) == 2
+        assert set(saved_ids) == {
+            first["incident_id"],
+            second["incident_id"],
+        }
+
+    finally:
+        for process in processes:
+            if process.is_alive():
+                process.terminate()
+            process.join(timeout=5)
+        results.close()
+        results.join_thread()
+
+
+
+def test_writer_waits_for_exclusive_lock(tmp_path):
+    """A writer waits until another process releases its lock."""
+    import multiprocessing
+    import time
+    from response import acquire_response_lock
+
+    path = tmp_path / "response_records.json"
+    lock_path = path.with_name(path.name + ".lock")
+
+    record = create_triage_record(
+        sample_incident(),
+        "Blue Team Analyst",
+        "Review",
+        "Controlled lock contention",
+    )
+
+    ctx = multiprocessing.get_context("spawn")
+    started = ctx.Event()
+    finished = ctx.Event()
+    results = ctx.Queue()
+
+    process = ctx.Process(
+        target=contention_save_worker,
+        args=(path, record, started, finished, results),
+    )
+    process.daemon = True
+
+    try:
+        with lock_path.open("a+b") as lock_file:
+            acquire_response_lock(lock_file)
+            process.start()
+
+            assert started.wait(timeout=5), "Worker did not start"
+
+            # Allow the worker time to attempt the locked save.
+            time.sleep(0.3)
+
+            assert not finished.is_set(), (
+                "Writer completed while exclusive lock was held"
+            )
+            assert not path.exists(), (
+                "Response history was written before lock release"
+            )
+
+        # The exclusive lock is released here.
+        process.join(timeout=10)
+
+        assert not process.is_alive(), (
+            "Writer remained blocked after lock release"
+        )
+        assert process.exitcode == 0
+
+        outcome = results.get(timeout=5)
+        assert outcome == ("PASS", record["incident_id"])
+
+        assert finished.is_set()
+        assert load_response_records(path) == [record]
+
+    finally:
+        if process.is_alive():
+            process.terminate()
+        if process.pid is not None:
+            process.join(timeout=5)
+        results.close()
+        results.join_thread()
+
+
+def contention_save_worker(path, record, started, finished, results):
+    """Save a record from an independent process."""
+    from response import save_response_record
+
+    started.set()
+
+    try:
+        save_response_record(path, record)
+        results.put(("PASS", record["incident_id"]))
+    except Exception as exc:
+        results.put(("FAIL", repr(exc)))
+    finally:
+        finished.set()
+

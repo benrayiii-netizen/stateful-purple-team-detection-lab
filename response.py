@@ -137,41 +137,43 @@ import tempfile
 
 
 def save_response_record(file_path, new_record):
-    """Safely persist a validated, nonduplicate triage record."""
+    """Persist a validated triage record under an exclusive lock."""
     validate_response_record(new_record)
 
     path = Path(file_path)
-    records = load_response_records(path)
+    lock_path = path.with_name(path.name + ".lock")
 
-    validate_response_history(records)
+    with lock_path.open("a+b") as lock_file:
+        acquire_response_lock(lock_file)
 
-    check_duplicate_incident(records, new_record)
-    updated_records = records + [new_record]
+        records = load_response_records(path)
+        validate_response_history(records)
+        check_duplicate_incident(records, new_record)
 
-    temporary_path = None
+        updated_records = records + [new_record]
+        temporary_path = None
 
-    try:
-        with tempfile.NamedTemporaryFile(
-            mode="w",
-            encoding="utf-8",
-            dir=path.parent,
-            prefix=f".{path.name}.",
-            suffix=".tmp",
-            delete=False,
-        ) as temporary_file:
-            temporary_path = Path(temporary_file.name)
-            json.dump(updated_records, temporary_file, indent=4)
-            temporary_file.flush()
-            os.fsync(temporary_file.fileno())
+        try:
+            with tempfile.NamedTemporaryFile(
+                mode="w",
+                encoding="utf-8",
+                dir=path.parent,
+                prefix=f".{path.name}.",
+                suffix=".tmp",
+                delete=False,
+            ) as temporary_file:
+                temporary_path = Path(temporary_file.name)
+                json.dump(updated_records, temporary_file, indent=4)
+                temporary_file.flush()
+                os.fsync(temporary_file.fileno())
 
-        os.replace(temporary_path, path)
+            os.replace(temporary_path, path)
 
-    finally:
-        if temporary_path is not None:
-            temporary_path.unlink(missing_ok=True)
+        finally:
+            if temporary_path is not None:
+                temporary_path.unlink(missing_ok=True)
 
-    return updated_records
-
+        return updated_records
 
 
 def validate_response_history(records):
