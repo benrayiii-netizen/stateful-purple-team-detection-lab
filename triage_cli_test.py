@@ -3,8 +3,14 @@
 
 from unittest.mock import patch
 
-from triage_cli import select_incident
+from triage_cli import (
+    select_incident,
+    collect_analyst_details,
+    build_triage_record,
+)
 
+import json
+import triage_cli
 
 def sample_incidents():
     """Create isolated test incidents without using live evidence."""
@@ -68,3 +74,215 @@ def test_empty_incident_list(capsys):
 
     output = capsys.readouterr().out
     assert "No incidents available for selection." in output
+
+
+
+def test_collect_valid_analyst_details():
+    """Valid analyst information is collected correctly."""
+    with patch(
+        "builtins.input",
+        side_effect=[
+            "Blue Team Analyst",
+            "Investigate",
+            "Correlated trigger and backdoor alerts",
+        ],
+    ):
+        details = collect_analyst_details()
+
+    assert details == {
+        "analyst": "Blue Team Analyst",
+        "decision": "Investigate",
+        "reason": "Correlated trigger and backdoor alerts",
+    }
+
+
+def test_reject_empty_analyst_name(capsys):
+    """An empty analyst name is rejected."""
+    with patch("builtins.input", return_value=""):
+        details = collect_analyst_details()
+
+    assert details is None
+    assert "analyst cannot be empty" in capsys.readouterr().out
+
+
+def test_reject_whitespace_decision(capsys):
+    """A whitespace-only decision is rejected."""
+    with patch(
+        "builtins.input",
+        side_effect=["Blue Team Analyst", "   "],
+    ):
+        details = collect_analyst_details()
+
+    assert details is None
+    assert "decision cannot be empty" in capsys.readouterr().out
+
+
+def test_reject_whitespace_reason(capsys):
+    """A whitespace-only justification is rejected."""
+    with patch(
+        "builtins.input",
+        side_effect=["Blue Team Analyst", "Investigate", "   "],
+    ):
+        details = collect_analyst_details()
+
+    assert details is None
+    assert "reason cannot be empty" in capsys.readouterr().out
+
+
+def sample_triage_incident():
+    """Provide synthetic incident evidence for triage tests."""
+    return {
+        "source_ip": "192.0.2.10",
+        "target_ip": "192.0.2.20",
+        "trigger_sid": 1000001,
+        "backdoor_sid": 1000002,
+        "trigger_time": "2026-10-09T12:49:21-05:00",
+        "backdoor_time": "2026-10-09T12:49:23-05:00",
+    }
+
+
+def test_build_valid_triage_record():
+    """Build a TRIAGED record without granting approval."""
+    incident = sample_triage_incident()
+    details = {
+        "analyst": "Blue Team Analyst",
+        "decision": "Investigate",
+        "reason": "Correlated trigger and backdoor alerts",
+    }
+
+    record = build_triage_record(incident, details)
+
+    assert record["status"] == "TRIAGED"
+    assert record["approved"] is False
+    assert record["analyst"] == "Blue Team Analyst"
+    assert record["decision"] == "Investigate"
+    assert record["reason"] == "Correlated trigger and backdoor alerts"
+
+    assert len(record["incident_id"]) == 64
+    assert all(
+        character in "0123456789abcdef"
+        for character in record["incident_id"]
+    )
+
+    # Same evidence must generate the same incident ID.
+    second_record = build_triage_record(incident, details)
+    assert record["incident_id"] == second_record["incident_id"]
+
+
+def test_build_triage_rejects_empty_analyst():
+    """Reject records that lack analyst identification."""
+    import pytest
+
+    incident = sample_triage_incident()
+    details = {
+        "analyst": "   ",
+        "decision": "Investigate",
+        "reason": "Correlated alerts",
+    }
+
+    with pytest.raises(ValueError, match="analyst"):
+        build_triage_record(incident, details)
+
+
+def test_build_triage_rejects_empty_reason():
+    """Reject triage decisions without justification."""
+    import pytest
+
+    incident = sample_triage_incident()
+    details = {
+        "analyst": "Blue Team Analyst",
+        "decision": "Investigate",
+        "reason": "   ",
+    }
+
+    with pytest.raises(ValueError, match="reason"):
+        build_triage_record(incident, details)
+
+
+def prepare_workflow_test(tmp_path, monkeypatch):
+    """Create isolated incident evidence for workflow testing."""
+    incident_file = tmp_path / "incidents.json"
+
+    incident_file.write_text(
+        json.dumps([sample_triage_incident()]),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(
+        triage_cli, "INCIDENT_FILE", incident_file
+    )
+
+    return incident_file
+
+
+def test_main_creates_unapproved_record_in_memory(
+    tmp_path, monkeypatch, capsys
+):
+    """A complete workflow creates an unapproved record."""
+    incident_file = prepare_workflow_test(
+        tmp_path, monkeypatch
+    )
+    original_evidence = incident_file.read_bytes()
+
+    with patch(
+        "builtins.input",
+        side_effect=[
+            "1",
+            "Blue Team Analyst",
+            "Investigate",
+            "Correlated trigger and backdoor alerts",
+        ],
+    ):
+        triage_cli.main()
+
+    output = capsys.readouterr().out
+
+    assert "TRIAGE RECORD CREATED IN MEMORY" in output
+    assert "Status: TRIAGED" in output
+    assert "Approved: False" in output
+    assert "Decision: Investigate" in output
+    assert "Record NOT saved to disk." in output
+
+    assert incident_file.read_bytes() == original_evidence
+    assert not (tmp_path / "response_records.json").exists()
+
+
+def test_main_stops_on_invalid_selection(
+    tmp_path, monkeypatch, capsys
+):
+    """Invalid selection prevents analyst data collection."""
+    prepare_workflow_test(tmp_path, monkeypatch)
+
+    with patch(
+        "builtins.input", return_value="99"
+    ) as mock_input:
+        triage_cli.main()
+
+    output = capsys.readouterr().out
+
+    assert "incident number out of range" in output
+    assert "ANALYST TRIAGE DETAILS" not in output
+    assert "TRIAGE RECORD CREATED IN MEMORY" not in output
+    assert mock_input.call_count == 1
+    assert not (tmp_path / "response_records.json").exists()
+
+
+def test_main_stops_on_invalid_analyst_details(
+    tmp_path, monkeypatch, capsys
+):
+    """Invalid analyst data prevents record construction."""
+    prepare_workflow_test(tmp_path, monkeypatch)
+
+    with patch(
+        "builtins.input",
+        side_effect=["1", "   "],
+    ) as mock_input:
+        triage_cli.main()
+
+    output = capsys.readouterr().out
+
+    assert "analyst cannot be empty" in output
+    assert "TRIAGE RECORD CREATED IN MEMORY" not in output
+    assert mock_input.call_count == 2
+    assert not (tmp_path / "response_records.json").exists()
+

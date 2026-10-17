@@ -3,7 +3,7 @@
 
 import json
 from pathlib import Path
-
+from response import create_triage_record
 
 INCIDENT_FILE = Path(__file__).resolve().parent / "incidents.json"
 
@@ -79,13 +79,72 @@ def select_incident(incidents):
 
 
 
+def collect_analyst_details():
+    """Collect analyst information without saving any records."""
+    print("\nANALYST TRIAGE DETAILS")
+    print("=" * 40)
+
+    details = {}
+
+    for field_name, prompt in (
+        ("analyst", "Analyst name: "),
+        ("decision", "Analyst decision: "),
+        ("reason", "Reason / justification: "),
+    ):
+        value = input(prompt).strip()
+
+        if not value:
+            print(f"Invalid input: {field_name} cannot be empty.")
+            return None
+
+        details[field_name] = value
+
+    return details
+
+
+
+def build_triage_record(incident, details):
+    """Build an unapproved triage record using the response engine."""
+    return create_triage_record(
+        incident,
+        details["analyst"],
+        details["decision"],
+        details["reason"],
+    )
 
 
 def main():
-    """Display existing incidents without modifying evidence."""
+    """Build an in-memory analyst triage record without saving."""
     incidents = load_incidents(INCIDENT_FILE)
     list_incidents(incidents)
-    select_incident(incidents)
+
+    selected_incident = select_incident(incidents)
+
+    if selected_incident is None:
+        return
+
+    details = collect_analyst_details()
+
+    if details is None:
+        return
+
+    record = build_triage_record(selected_incident, details)
+
+    print("\nTRIAGE RECORD CREATED IN MEMORY")
+    print("=" * 40)
+    print(f"Incident ID: {record['incident_id']}")
+    print(f"Status: {record['status']}")
+    print(f"Analyst: {record['analyst']}")
+    print(f"Decision: {record['decision']}")
+    print(f"Reason: {record['reason']}")
+    print(f"Approved: {record['approved']}")
+    print("\nRecord NOT saved to disk.")
+
+
+
+
+
+
 
 if __name__ == "__main__":
     main()
