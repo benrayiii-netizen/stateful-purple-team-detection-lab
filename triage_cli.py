@@ -1,12 +1,12 @@
-
-"""Read-only incident listing for the Purple Team analyst CLI."""
+"""Purple Team analyst CLI for incident review and persistent triage."""
 
 import json
 from pathlib import Path
-from response import create_triage_record
+from response import create_triage_record, save_response_record
 
 INCIDENT_FILE = Path(__file__).resolve().parent / "incidents.json"
 
+RESPONSE_FILE = Path(__file__).resolve().parent / "response_records.json"
 
 def load_incidents(file_path):
     """Load and validate the incident list structure."""
@@ -114,7 +114,7 @@ def build_triage_record(incident, details):
 
 
 def main():
-    """Build an in-memory analyst triage record without saving."""
+    """Create and persist an unapproved analyst triage record."""
     incidents = load_incidents(INCIDENT_FILE)
     list_incidents(incidents)
 
@@ -130,7 +130,13 @@ def main():
 
     record = build_triage_record(selected_incident, details)
 
-    print("\nTRIAGE RECORD CREATED IN MEMORY")
+    try:
+        save_response_record(RESPONSE_FILE, record)
+    except (ValueError, OSError) as exc:
+        print(f"\nTRIAGE RECORD NOT SAVED: {exc}")
+        return
+
+    print("\nTRIAGE RECORD SAVED")
     print("=" * 40)
     print(f"Incident ID: {record['incident_id']}")
     print(f"Status: {record['status']}")
@@ -138,8 +144,7 @@ def main():
     print(f"Decision: {record['decision']}")
     print(f"Reason: {record['reason']}")
     print(f"Approved: {record['approved']}")
-    print("\nRecord NOT saved to disk.")
-
+    print("\nRecord saved to disk.")
 
 
 

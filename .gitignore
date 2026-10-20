@@ -12,3 +12,7 @@ fast.log
 correlate_v1_backup.py
 correlate_test.py
 /test_outside_window.json
+
+# Local analyst triage history
+/response_records.json
+/response_records.json.lock

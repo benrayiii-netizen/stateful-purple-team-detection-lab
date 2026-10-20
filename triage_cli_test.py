@@ -215,13 +215,21 @@ def prepare_workflow_test(tmp_path, monkeypatch):
     return incident_file
 
 
-def test_main_creates_unapproved_record_in_memory(
+def test_main_saves_unapproved_record_and_preserves_evidence(
     tmp_path, monkeypatch, capsys
 ):
-    """A complete workflow creates an unapproved record."""
+    """Persist triage without changing original incident evidence."""
     incident_file = prepare_workflow_test(
         tmp_path, monkeypatch
     )
+
+    response_file = tmp_path / "response_records.json"
+
+    monkeypatch.setattr(
+        triage_cli, "RESPONSE_FILE",
+        response_file, raising=False
+    )
+
     original_evidence = incident_file.read_bytes()
 
     with patch(
@@ -237,15 +245,19 @@ def test_main_creates_unapproved_record_in_memory(
 
     output = capsys.readouterr().out
 
-    assert "TRIAGE RECORD CREATED IN MEMORY" in output
+    assert "TRIAGE RECORD SAVED" in output
     assert "Status: TRIAGED" in output
     assert "Approved: False" in output
-    assert "Decision: Investigate" in output
-    assert "Record NOT saved to disk." in output
 
     assert incident_file.read_bytes() == original_evidence
-    assert not (tmp_path / "response_records.json").exists()
 
+    records = json.loads(
+        response_file.read_text(encoding="utf-8")
+    )
+
+    assert len(records) == 1
+    assert records[0]["status"] == "TRIAGED"
+    assert records[0]["approved"] is False
 
 def test_main_stops_on_invalid_selection(
     tmp_path, monkeypatch, capsys
@@ -286,3 +298,175 @@ def test_main_stops_on_invalid_analyst_details(
     assert mock_input.call_count == 2
     assert not (tmp_path / "response_records.json").exists()
 
+
+
+def test_main_persists_unapproved_record(
+    tmp_path, monkeypatch
+):
+    """Persist triage without modifying original evidence."""
+    incident_file = prepare_workflow_test(
+        tmp_path, monkeypatch
+    )
+
+    response_file = tmp_path / "response_records.json"
+
+    monkeypatch.setattr(
+        triage_cli, "RESPONSE_FILE",
+        response_file, raising=False
+    )
+
+    original_evidence = incident_file.read_bytes()
+
+    with patch(
+        "builtins.input",
+        side_effect=[
+            "1",
+            "Blue Team Analyst",
+            "Investigate",
+            "Correlated trigger and backdoor alerts",
+        ],
+    ):
+        triage_cli.main()
+
+    assert incident_file.read_bytes() == original_evidence
+
+    records = json.loads(
+        response_file.read_text(encoding="utf-8")
+    )
+
+    assert len(records) == 1
+    assert records[0]["status"] == "TRIAGED"
+    assert records[0]["approved"] is False
+    assert records[0]["analyst"] == "Blue Team Analyst"
+
+def test_main_rejects_duplicate_without_changing_history(
+    tmp_path, monkeypatch, capsys
+):
+    """Duplicate triage must not change saved response history."""
+    prepare_workflow_test(tmp_path, monkeypatch)
+
+    response_file = tmp_path / "response_records.json"
+
+    monkeypatch.setattr(
+        triage_cli, "RESPONSE_FILE",
+        response_file
+    )
+
+    analyst_answers = [
+        "1",
+        "Blue Team Analyst",
+        "Investigate",
+        "Correlated trigger and backdoor alerts",
+    ]
+
+    with patch("builtins.input", side_effect=analyst_answers):
+        triage_cli.main()
+
+    original_history = response_file.read_bytes()
+    capsys.readouterr()
+
+    with patch("builtins.input", side_effect=analyst_answers):
+        triage_cli.main()
+
+    output = capsys.readouterr().out
+
+    assert "TRIAGE RECORD NOT SAVED" in output
+    assert "Response record already exists" in output
+    assert "TRIAGE RECORD SAVED" not in output
+
+    assert response_file.read_bytes() == original_history
+
+    records = json.loads(
+        response_file.read_text(encoding="utf-8")
+    )
+
+    assert len(records) == 1
+    assert records[0]["approved"] is False
+
+def test_main_rejects_corrupted_history_without_overwriting(
+    tmp_path, monkeypatch, capsys
+):
+    """Corrupted history must remain untouched after a failed save."""
+    incident_file = prepare_workflow_test(
+        tmp_path, monkeypatch
+    )
+
+    response_file = tmp_path / "response_records.json"
+
+    monkeypatch.setattr(
+        triage_cli, "RESPONSE_FILE",
+        response_file
+    )
+
+    response_file.write_text(
+        '{"corrupted": ',
+        encoding="utf-8"
+    )
+
+    original_history = response_file.read_bytes()
+    original_evidence = incident_file.read_bytes()
+
+    with patch(
+        "builtins.input",
+        side_effect=[
+            "1",
+            "Blue Team Analyst",
+            "Investigate",
+            "Correlated trigger and backdoor alerts",
+        ],
+    ):
+        triage_cli.main()
+
+    output = capsys.readouterr().out
+
+    assert "TRIAGE RECORD NOT SAVED" in output
+    assert "TRIAGE RECORD SAVED" not in output
+
+    assert response_file.read_bytes() == original_history
+    assert incident_file.read_bytes() == original_evidence
+
+def test_main_handles_storage_failure_without_false_success(
+    tmp_path, monkeypatch, capsys
+):
+    """Storage failure must never be reported as a successful save."""
+    incident_file = prepare_workflow_test(
+        tmp_path, monkeypatch
+    )
+
+    response_file = tmp_path / "response_records.json"
+
+    monkeypatch.setattr(
+        triage_cli, "RESPONSE_FILE",
+        response_file
+    )
+
+    original_evidence = incident_file.read_bytes()
+
+    def simulated_save_failure(file_path, record):
+        raise OSError("Simulated storage failure")
+
+    monkeypatch.setattr(
+        triage_cli,
+        "save_response_record",
+        simulated_save_failure
+    )
+
+    with patch(
+        "builtins.input",
+        side_effect=[
+            "1",
+            "Blue Team Analyst",
+            "Investigate",
+            "Correlated trigger and backdoor alerts",
+        ],
+    ):
+        triage_cli.main()
+
+    output = capsys.readouterr().out
+
+    assert "TRIAGE RECORD NOT SAVED" in output
+    assert "Simulated storage failure" in output
+    assert "TRIAGE RECORD SAVED" not in output
+
+    assert incident_file.read_bytes() == original_evidence
+    assert not response_file.exists()
